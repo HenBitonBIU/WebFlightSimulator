@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Web;
@@ -10,37 +10,34 @@ using System.IO;
 using System.Text;
 using System.Diagnostics;
 
-namespace Ajax_Minimal.Models
+namespace FlightGearWebApp.Models
 {
     public class NetworkConnection
     {
-        private static Random rnd = new Random();
-        Thread connectThread; //thread will try and reach a server
         int tryPulse = 500;
         public volatile bool stop = true;
         private TcpClient myTcpClient;
+        Thread connect;
         public static Mutex mutex = new Mutex();
-
-        public string Ip { get; set; }
-        public int Port { get; set; }
-        public double Lat { get; set; }
         public double Lon { get; set; }
-
-        
+        public double Lat { get; set; }
+        public double Throttle { get; set; }
+        public double Rudder { get; set; }
+        public string Ip{ get; set;}
+        public int Port { get; set; }
+       
+     
         public void Connect()
         {
-           // Debug.WriteLine("Mutex was claimed");
             if (!stop)
             {
-              // Debug.WriteLine("Mutex was released from !stop -> return");
                 return;
             }
             stop = false;
 
             this.myTcpClient = new TcpClient();
-            this.connectThread = new Thread(() =>
+            this.connect = new Thread(() =>
             {
-                mutex.WaitOne();
                 while (!myTcpClient.Connected)
                 {
                     try
@@ -50,28 +47,24 @@ namespace Ajax_Minimal.Models
                     }
                     catch (Exception)
                     {
-                        Debug.WriteLine("Trying to connect to simulator");
-                        /** Keep trying */
                     }
-                }
-                /** Upon reaching here program has been connected */
-                Debug.WriteLine("Connected!");
-                mutex.ReleaseMutex();
-               // Debug.WriteLine("NC - Mutex was released from connect");
+                }           
             });
-            this.connectThread.Start();
+            this.connect.Start();
         }
-        /// This function closes program as a server and a client.
         public void Disconnect()
         {
+            
             if (stop)
             {
                 return;
-            }
-            connectThread.Abort();
+            }         
+            connect.Abort();
             this.myTcpClient.Close();
             stop = true;
         }
+
+
         public string ParseValue(string toBeParsed)
         {
             string[] result = toBeParsed.Split('=');
@@ -80,40 +73,58 @@ namespace Ajax_Minimal.Models
 
             return result[0];
         }
-
-        public void Write()
+        public void Write()   //later make it with no args
         {
-            string command = "";
-            mutex.WaitOne(); 
+            string command = "";  
             NetworkStream writeStream = this.myTcpClient.GetStream();  
+            //Lon
             command = "get /position/longitude-deg\r\n";
             int byteCount = Encoding.ASCII.GetByteCount(command); 
             byte[] sendData = new byte[byteCount];  
-            sendData = Encoding.ASCII.GetBytes(command);   //puts the message in the buffer
+            sendData = Encoding.ASCII.GetBytes(command);   
+
             writeStream.Write(sendData, 0, sendData.Length); 
-            Debug.WriteLine("Just before printing what got back from the server");
             StreamReader STR = new StreamReader(writeStream);
-            //Debug.WriteLine("Recieved from server " + STR.ReadLine());
             string lon = ParseValue(STR.ReadLine());
             Lon = double.Parse(lon);
+
+            //Lat
             command = "get /position/latitude-deg\r\n";
-            byteCount = Encoding.ASCII.GetByteCount(command); //puts the message in the buffer
-            sendData = new byte[byteCount];  
+            byteCount = Encoding.ASCII.GetByteCount(command); 
+            sendData = new byte[byteCount];  //create a buffer
             sendData = Encoding.ASCII.GetBytes(command);   
-            writeStream.Write(sendData, 0, sendData.Length);
+            writeStream.Write(sendData, 0, sendData.Length); 
             STR = new StreamReader(writeStream);
-           // Debug.WriteLine("Recieved from server " + STR.ReadLine());
             string lat = ParseValue(STR.ReadLine());
             Lat = double.Parse(lat);
-            mutex.ReleaseMutex();
+            //Throttle
+            command = "get /controls/engines/engine/throttle\r\n";
+            byteCount = Encoding.ASCII.GetByteCount(command); 
+            sendData = new byte[byteCount];  //create a buffer
+            sendData = Encoding.ASCII.GetBytes(command);   
+            writeStream.Write(sendData, 0, sendData.Length); 
+            STR = new StreamReader(writeStream);
+            string throttle = ParseValue(STR.ReadLine());
+            Throttle = double.Parse(throttle);
+            //Rudder
+            command = "get /controls/flight/rudder\r\n";
+            byteCount = Encoding.ASCII.GetByteCount(command); 
+            sendData = new byte[byteCount];  //create a buffer
+            sendData = Encoding.ASCII.GetBytes(command);
+            writeStream.Write(sendData, 0, sendData.Length);       
+            STR = new StreamReader(writeStream);
+            string rudder = ParseValue(STR.ReadLine());
+            Rudder = double.Parse(rudder);
         }
-        public void ToXml(XmlWriter writer)
+    public void ToXml(XmlWriter writer)
         {
             writer.WriteStartElement("NetworkConnection");
             writer.WriteElementString("Ip", this.Ip);
             writer.WriteElementString("Port", this.Port.ToString());
             writer.WriteElementString("Lon", this.Lon.ToString());
             writer.WriteElementString("Lat", this.Lat.ToString());
+            writer.WriteElementString("Throttle", this.Throttle.ToString());
+            writer.WriteElementString("Rudder", this.Rudder.ToString());
             writer.WriteEndElement();
         }
     }

@@ -1,13 +1,16 @@
-﻿using System;
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Web;
-using Ajax_Minimal.Models;
+using FlightGearWebApp.Models;
 using System.IO;
 using System.Text;
 using System.Diagnostics;
+using System.Threading;
+using System.Xml;
 
-namespace Ajax_Minimal.Models
+namespace FlightGearWebApp.Models
 {
     public class InfoModel
     {
@@ -19,20 +22,25 @@ namespace Ajax_Minimal.Models
             {
                 if (s_instace == null)
                 {
-                  //  Debug.WriteLine("network in info was null");
                     s_instace = new InfoModel();
                 }
-               // Debug.WriteLine("Returning network - from the GetNetwrok retquest from js");
                 return s_instace;
             }
         }
 
-        public int Timeout { get; set; }
         public int Time { get; set; }
+        public int Timeout { get; set; }
         public string FilePath { get; set; }
+        public float Lat { get; private set; }
+        public float Lon { get; private set; }
+        public bool isMoreFileLines { get; private set; }
+        public string EOFBOOL { get; set; }
         private StreamWriter streamWriter;
+        private StreamReader streamReader;
 
         public NetworkConnection NetworkConnection { get; private set; }
+        public static Mutex WriteStreaMutex = new Mutex();
+        public static Mutex WriteFileMutex = new Mutex();
 
         private InfoModel()
         {
@@ -44,20 +52,61 @@ namespace Ajax_Minimal.Models
             NetworkConnection.Connect();
         }
 
-        public void CreateFile(string filePath)
+
+        public void OpenFileWrite(string filePath)
         {
             this.streamWriter = new StreamWriter(filePath);
         }
-
-        public void WriteToFile(string filePath)
+        public void CreateFile(string filePath)
         {
-            string toWrite = this.NetworkConnection.Lon.ToString() + "," + this.NetworkConnection.Lat.ToString();
-            this.streamWriter.WriteLineAsync(toWrite); // the writing needs to be done in another func.
+            Debug.WriteLine("creates a new string writer");
+            this.streamWriter = new StreamWriter(filePath);
+        }
+        public void OpenFileRead(string filePath)
+        {
+            this.isMoreFileLines = true;
+            EOFBOOL = "0";
+            this.streamReader = new StreamReader(filePath);
+        }
+    public void WriteToFile(string filePath)
+        {
+            string toWrite = this.NetworkConnection.Lon.ToString() + "," + this.NetworkConnection.Lat.ToString() + "," + 
+                this.NetworkConnection.Throttle.ToString() + "," + this.NetworkConnection.Rudder.ToString();
+            this.streamWriter.WriteLine(toWrite); // the writing needs to be done in another func.
+        }
+        public void ReadFileValues()
+        {
+            string line = streamReader.ReadLine();
+            if (line == null)
+            {
+                this.EOFBOOL = "1";
+                this.isMoreFileLines = false;
+                this.CloseFileRead(this.FilePath);
+            }
+            else
+            {
+                string[] values = line.Split(',');
+                this.Lon = float.Parse(values[0]);
+                this.Lat = float.Parse(values[1]);       
+            }
         }
 
-        public void CloseFile(string filePath)
+        public void CloseFileRead(string filePath)  
+        {
+            this.streamReader.Close();
+        }
+
+        public void CloseFileWrite(string filePath)
         {
             this.streamWriter.Close();
+        }
+        public void ToXml(XmlWriter xmlWriter)
+        {
+            xmlWriter.WriteStartElement("InfoModel");
+            xmlWriter.WriteElementString("Lat", this.Lat.ToString());
+            xmlWriter.WriteElementString("Lon", this.Lon.ToString());
+            xmlWriter.WriteElementString("isEOF",this.EOFBOOL);
+            xmlWriter.WriteEndElement();
         }
     }
 }
